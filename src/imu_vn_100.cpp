@@ -84,6 +84,13 @@ ImuVn100::ImuVn100(const ros::NodeHandle &pnh)
     : pnh_(pnh), port_(std::string("/dev/ttyUSB0")), baudrate_(921600),
       frame_id_(std::string("imu")) {
 
+  std::string xTopic = "xOrientation";
+  std::string yTopic = "yOrientatoin";
+  std::string zTopic = "zOrientation";
+  xOrientationPub_ = pnh_.advertise<std_msgs::Float64>(xTopic, 1);
+  yOrientationPub_ = pnh_.advertise<std_msgs::Float64>(yTopic, 1);
+  zOrientationPub_ = pnh_.advertise<std_msgs::Float64>(zTopic, 1);
+  zVelPub_ = pnh_.advertise<std_msgs::Float64>("zVel", 1);
   Initialize();
   imu_vn_100_ptr = this;
 }
@@ -199,24 +206,26 @@ void ImuVn100::Initialize() {
   // 0 1 0
   //-1 0 1
 
-  // Set a new reference frame and reset the imu
-  //VnMatrix3x3 refFrame;
+  ROS_INFO("HERE");
 
-  //refFrame.c00 = 1, refFrame.c01 = 0, refFrame.c02 = 0;
-  //refFrame.c10 = 0, refFrame.c11 = -1, refFrame.c12 = 0;
-  //refFrame.c20 = 0, refFrame.c21 = 0, refFrame.c22 = -1;
+  // Set a new reference frame and reset the imu
+  VnMatrix3x3 refFrame;
+
+  refFrame.c00 = 0, refFrame.c01 = 0, refFrame.c02 = -1;
+  refFrame.c10 = 1, refFrame.c11 = 0, refFrame.c12 = 0;
+  refFrame.c20 = 0, refFrame.c21 = -1, refFrame.c22 = 0;
 
   //refFrame.c00 = 1, refFrame.c01 = 0, refFrame.c02 = 0;
   //refFrame.c10 = 0, refFrame.c11 = 1, refFrame.c12 = 0;
   //refFrame.c20 = 0, refFrame.c21 = 0, refFrame.c22 = 1;
 
-  //vn100_setReferenceFrameRotation(&imu_, refFrame, true);
+  vn100_setReferenceFrameRotation(&imu_, refFrame, true);
 
-  //vn100_writeSettings(&imu_, true);
+  vn100_writeSettings(&imu_, true);
 
-  //vn100_reset(&imu_);
+  vn100_reset(&imu_);
 
-  //ros::Duration(1).sleep();
+  ros::Duration(1).sleep();
 
   ROS_INFO("Fetching device info.");
   char model_number_buffer[30] = {0};
@@ -349,7 +358,15 @@ void ImuVn100::PublishData(const VnDeviceCompositeData &data) {
   FillImuMessage(imu_msg, data, binary_output_);
   pd_imu_.Publish(imu_msg);
   pd_twist_.Publish(twist_msg);
-
+  std_msgs::Float64 msg;
+  msg.data = imu_msg.orientation.x;
+  xOrientationPub_.publish(msg);
+  msg.data = imu_msg.orientation.y;
+  yOrientationPub_.publish(msg);
+  msg.data = imu_msg.orientation.z;
+  zOrientationPub_.publish(msg);
+  msg.data = imu_msg.angular_velocity.z;
+  zVelPub_.publish(msg);
   if (enable_mag_) {
     sensor_msgs::MagneticField mag_msg;
     mag_msg.header = imu_msg.header;

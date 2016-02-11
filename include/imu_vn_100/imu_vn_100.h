@@ -24,6 +24,7 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/MagneticField.h>
 #include <sensor_msgs/Temperature.h>
+#include <std_msgs/Float64.h>
 
 #include <geometry_msgs/TwistStamped.h>
 
@@ -138,6 +139,8 @@ private:
   du::Updater updater_;
   DiagnosedPublisher pd_imu_, pd_twist_, pd_mag_, pd_pres_, pd_temp_;
   ros::ServiceServer srv_tare_;
+
+  ros::Publisher zOrientationPub_, xOrientationPub_, yOrientationPub_,zVelPub_;
 
   void FixImuRate();
   void LoadParameters();
