@@ -29,6 +29,9 @@
 #include <sensor_msgs/FluidPressure.h>
 #include <sensor_msgs/Temperature.h>
 
+#include <geometry_msgs/TwistStamped.h>
+
+
 #include "vn/sensors/sensors.h"
 #include "vn/protocol/uart/types.h"
 
@@ -132,7 +135,7 @@ class ImuVn100 {
   SyncInfo* sync_info_;
 
   du::Updater updater_;
-  DiagnosedPublisher pd_imu_, pd_mag_, pd_pres_, pd_temp_;
+  DiagnosedPublisher pd_imu_, pd_twist_, pd_mag_, pd_pres_, pd_temp_;
 
   // State variables
   uint64_t vn100_prev_timestamp_ = 0;   // Time since startup in nanoseconds

@@ -16,11 +16,11 @@
  * limitations under the License.
  */
 
-#include <imu_vn_100/imu_vn_100.h>
-#include "vn/sensors/sensors.h"
-#include "vn/math/math.h"
 #include "vn/math/conversions.h"
 #include "vn/math/kinematics.h"
+#include "vn/math/math.h"
+#include "vn/sensors/sensors.h"
+#include <imu_vn_100/imu_vn_100.h>
 
 namespace imu_vn_100 {
 
@@ -29,16 +29,16 @@ namespace imu_vn_100 {
  * @param ros_vec3
  * @param vn_vec3
  */
-void RosVector3FromVnVector3(geometry_msgs::Vector3& ros_vec3,
-                             const vn::math::vec3f& vn_vec3);
+void RosVector3FromVnVector3(geometry_msgs::Vector3 &ros_vec3,
+                             const vn::math::vec3f &vn_vec3);
 
 /**
  * @brief RosQuaternionFromVnQuaternion
  * @param ros_quat
  * @param vn_vec4
  */
-void RosQuaternionFromVnVector4(geometry_msgs::Quaternion& ros_quat,
-                                const vn::math::vec4f& vn_vec4);
+void RosQuaternionFromVnVector4(geometry_msgs::Quaternion &ros_quat,
+                                const vn::math::vec4f &vn_vec4);
 
 /**
  * @brief asciiOrBinaryAsyncMessageReceived
@@ -46,8 +46,8 @@ void RosQuaternionFromVnVector4(geometry_msgs::Quaternion& ros_quat,
  * @param p
  * @param index
  */
-void asciiOrBinaryAsyncMessageReceived(void* userData,
-                                       vn::protocol::uart::Packet& p,
+void asciiOrBinaryAsyncMessageReceived(void *userData,
+                                       vn::protocol::uart::Packet &p,
                                        size_t index);
 
 /**
@@ -56,7 +56,7 @@ void asciiOrBinaryAsyncMessageReceived(void* userData,
  * @param p
  * @param index
  */
-void errorMessageReceived(void* userData, vn::protocol::uart::Packet& p,
+void errorMessageReceived(void *userData, vn::protocol::uart::Packet &p,
                           size_t index);
 
 constexpr int ImuVn100::kBaseImuRate;
@@ -64,8 +64,9 @@ constexpr int ImuVn100::kDefaultImuRate;
 constexpr int ImuVn100::kDefaultSyncOutRate;
 
 void ImuVn100::SyncInfo::Update(const unsigned sync_count,
-                                const ros::Time& sync_time) {
-  if (rate <= 0) return;
+                                const ros::Time &sync_time) {
+  if (rate <= 0)
+    return;
   std::lock_guard<std::mutex> lock(this->info_mutex);
 
   if (count != sync_count) {
@@ -98,10 +99,8 @@ void ImuVn100::SyncInfo::FixSyncRate() {
   ROS_INFO("Sync out rate: %d", rate);
 }
 
-ImuVn100::ImuVn100(const ros::NodeHandle& pnh)
-    : pnh_(pnh),
-      port_(std::string("/dev/ttyUSB0")),
-      baudrate_(921600),
+ImuVn100::ImuVn100(const ros::NodeHandle &pnh)
+    : pnh_(pnh), port_(std::string("/dev/ttyUSB0")), baudrate_(921600),
       frame_id_(std::string("imu")) {
   Initialize();
 }
@@ -142,24 +141,24 @@ void ImuVn100::LoadParameters() {
     enable_pres_ = enable_temp_ = false;
   }
 
-  int vn_serial_output_tmp = 4;  // init on invalid number
+  int vn_serial_output_tmp = 4; // init on invalid number
   pnh_.param("vn_serial_output", vn_serial_output_tmp, 1);
   switch (vn_serial_output_tmp) {
-    case 0:
-      vn_serial_output_ = vn::protocol::uart::ASYNCMODE_NONE;
-      break;
-    case 1:
-      vn_serial_output_ = vn::protocol::uart::ASYNCMODE_PORT1;
-      break;
-    case 2:
-      vn_serial_output_ = vn::protocol::uart::ASYNCMODE_PORT2;
-      break;
-    case 3:
-      vn_serial_output_ = vn::protocol::uart::ASYNCMODE_BOTH;
-      break;
-    default:
-      ROS_ERROR("Incorrect VN serial port chosen.");
-      break;
+  case 0:
+    vn_serial_output_ = vn::protocol::uart::ASYNCMODE_NONE;
+    break;
+  case 1:
+    vn_serial_output_ = vn::protocol::uart::ASYNCMODE_PORT1;
+    break;
+  case 2:
+    vn_serial_output_ = vn::protocol::uart::ASYNCMODE_PORT2;
+    break;
+  case 3:
+    vn_serial_output_ = vn::protocol::uart::ASYNCMODE_BOTH;
+    break;
+  default:
+    ROS_ERROR("Incorrect VN serial port chosen.");
+    break;
   }
 
   FixImuRate();
@@ -169,6 +168,8 @@ void ImuVn100::LoadParameters() {
 void ImuVn100::CreateDiagnosedPublishers() {
   imu_rate_double_ = imu_rate_;
   pd_imu_.Create<sensor_msgs::Imu>(pnh_, "imu", updater_, imu_rate_double_);
+  pd_twist_.Create<geometry_msgs::TwistStamped>(pnh_, "twist", updater_,
+                                                imu_rate_double_);
   if (enable_mag_) {
     pd_mag_.Create<sensor_msgs::MagneticField>(pnh_, "magnetic_field", updater_,
                                                imu_rate_double_);
@@ -204,7 +205,7 @@ void ImuVn100::Initialize() {
     ros::Duration(0.5).sleep();
   } catch (std::exception except) {
     ROS_INFO("Failed to open device with default baudrate with exception: %s",
-              except.what());
+             except.what());
   }
 
   // Open with the desired baud rate
@@ -240,10 +241,10 @@ void ImuVn100::Initialize() {
       imu_.writeCommunicationProtocolControl(
           vn::protocol::uart::COUNTMODE_SYNCOUTCOUNTER,
           vn::protocol::uart::STATUSMODE_OFF,
-          vn::protocol::uart::COUNTMODE_NONE,         // SPI
-          vn::protocol::uart::STATUSMODE_OFF,         // SPI
-          vn::protocol::uart::CHECKSUMMODE_CHECKSUM,  // serial checksum is 8bit
-          vn::protocol::uart::CHECKSUMMODE_CHECKSUM,  // SPI
+          vn::protocol::uart::COUNTMODE_NONE,        // SPI
+          vn::protocol::uart::STATUSMODE_OFF,        // SPI
+          vn::protocol::uart::CHECKSUMMODE_CHECKSUM, // serial checksum is 8bit
+          vn::protocol::uart::CHECKSUMMODE_CHECKSUM, // SPI
           vn::protocol::uart::ERRORMODE_SEND, true);
     }
   }
@@ -309,8 +310,9 @@ void ImuVn100::Idle(bool need_reply) {}
 
 void ImuVn100::Disconnect() { imu_.disconnect(); }
 
-void ImuVn100::PublishData(vn::protocol::uart::Packet& p) {
+void ImuVn100::PublishData(vn::protocol::uart::Packet &p) {
   sensor_msgs::Imu imu_msg;
+  geometry_msgs::TwistStamped twist_msg;
   imu_msg.header.frame_id = frame_id_;
 
   vn::math::vec4f quaternion;
@@ -330,17 +332,20 @@ void ImuVn100::PublishData(vn::protocol::uart::Packet& p) {
       // basically offset the time using the vn100 clock instead of the ros
       // clock. Should get better timings this way
       ros::Duration vn100_integration_duration;
-      vn100_integration_duration.fromNSec(time_since_startup - vn100_prev_timestamp_);
+      vn100_integration_duration.fromNSec(time_since_startup -
+                                          vn100_prev_timestamp_);
       imu_msg.header.stamp = ros_prev_timestamp_ + vn100_integration_duration;
     }
     ros_prev_timestamp_ = imu_msg.header.stamp;
-    vn100_prev_timestamp_ = time_since_startup;  // COMMONGROUP_TIMESTARTUP
-    quaternion = p.extractVec4f();    // COMMONGROUP_QUATERNION
-    magnetometer = p.extractVec3f();  // COMMONGROUP_MAGPRES
+    vn100_prev_timestamp_ = time_since_startup; // COMMONGROUP_TIMESTARTUP
+    quaternion = p.extractVec4f();              // COMMONGROUP_QUATERNION
+    magnetometer = p.extractVec3f();            // COMMONGROUP_MAGPRES
   } else {
     // In ascii mode, linear acceleration and angular velocity are NOT swapped
     p.parseVNQMR(&quaternion, &magnetometer, &linear_accel, &angular_rate);
   }
+
+  twist_msg.header = imu_msg.header;
 
   if (enable_mag_) {
     sensor_msgs::MagneticField mag_msg;
@@ -349,7 +354,7 @@ void ImuVn100::PublishData(vn::protocol::uart::Packet& p) {
     pd_mag_.Publish(mag_msg);
   }
 
-  float temperature = p.extractFloat();  // COMMONGROUP_MAGPRES
+  float temperature = p.extractFloat(); // COMMONGROUP_MAGPRES
   if (enable_temp_) {
     sensor_msgs::Temperature temp_msg;
     temp_msg.header = imu_msg.header;
@@ -357,7 +362,7 @@ void ImuVn100::PublishData(vn::protocol::uart::Packet& p) {
     pd_temp_.Publish(temp_msg);
   }
 
-  float pressure = p.extractFloat();  // COMMONGROUP_MAGPRES
+  float pressure = p.extractFloat(); // COMMONGROUP_MAGPRES
   if (enable_pres_) {
     sensor_msgs::FluidPressure pres_msg;
     pres_msg.header = imu_msg.header;
@@ -365,40 +370,44 @@ void ImuVn100::PublishData(vn::protocol::uart::Packet& p) {
     pd_pres_.Publish(pres_msg);
   }
 
-  unsigned int syncInCnt = p.extractUint32();  // COMMONGROUP_SYNCINCNT
-  linear_accel = p.extractVec3f();  // IMUGROUP_ACCEL
-  angular_rate = p.extractVec3f();  // IMUGROUP_ANGULARRATE
+  unsigned int syncInCnt = p.extractUint32(); // COMMONGROUP_SYNCINCNT
+  linear_accel = p.extractVec3f();            // IMUGROUP_ACCEL
+  angular_rate = p.extractVec3f();            // IMUGROUP_ANGULARRATE
 
   RosQuaternionFromVnVector4(imu_msg.orientation, quaternion);
   RosVector3FromVnVector3(imu_msg.angular_velocity, angular_rate);
   RosVector3FromVnVector3(imu_msg.linear_acceleration, linear_accel);
 
+  RosVector3FromVnVector3(twist_msg.twist.angular, angular_rate);
+  RosVector3FromVnVector3(twist_msg.twist.linear, linear_accel);
+
   sync_info_->Update(syncInCnt, imu_msg.header.stamp);
   pd_imu_.Publish(imu_msg);
+  pd_twist_.Publish(twist_msg);
 
   updater_.update();
 }
 
-void RosVector3FromVnVector3(geometry_msgs::Vector3& ros_vec3,
-                             const vn::math::vec3f& vn_vec3) {
+void RosVector3FromVnVector3(geometry_msgs::Vector3 &ros_vec3,
+                             const vn::math::vec3f &vn_vec3) {
   ros_vec3.x = vn_vec3[0];
   ros_vec3.y = vn_vec3[1];
   ros_vec3.z = vn_vec3[2];
 }
 
-void RosQuaternionFromVnVector4(geometry_msgs::Quaternion& ros_quat,
-                                const vn::math::vec4f& vn_vec4) {
-  ros_quat.x = vn_vec4[0];  // see quaternion application note
+void RosQuaternionFromVnVector4(geometry_msgs::Quaternion &ros_quat,
+                                const vn::math::vec4f &vn_vec4) {
+  ros_quat.x = vn_vec4[0]; // see quaternion application note
   ros_quat.y = vn_vec4[1];
   ros_quat.z = vn_vec4[2];
   ros_quat.w = vn_vec4[3];
 }
 
-void asciiOrBinaryAsyncMessageReceived(void* userData,
-                                       vn::protocol::uart::Packet& p,
+void asciiOrBinaryAsyncMessageReceived(void *userData,
+                                       vn::protocol::uart::Packet &p,
                                        size_t index) {
   using namespace vn::protocol::uart;
-  ImuVn100* imu = (ImuVn100*)userData;
+  ImuVn100 *imu = (ImuVn100 *)userData;
 
   if (imu->IsBinaryOutput()) {
     if (!p.isCompatible((COMMONGROUP_TIMESTARTUP | COMMONGROUP_QUATERNION |
@@ -430,66 +439,65 @@ void asciiOrBinaryAsyncMessageReceived(void* userData,
   imu->PublishData(p);
 }
 
-void errorMessageReceived(void* userData, vn::protocol::uart::Packet& p,
+void errorMessageReceived(void *userData, vn::protocol::uart::Packet &p,
                           size_t index) {
   using vn::protocol::uart::SensorError;
-  ImuVn100* imu = (ImuVn100*)userData;
+  ImuVn100 *imu = (ImuVn100 *)userData;
   SensorError se = p.parseError();
 
-  if (se == 0) return;
+  if (se == 0)
+    return;
 
   switch (se) {
-    case SensorError::ERR_HARD_FAULT:
-      ROS_ERROR("VN: Hard fault. Processor will force restart.");
-      break;
-    case SensorError::ERR_SERIAL_BUFFER_OVERFLOW:  ///< Serial buffer overflow.
-      // We tried sending some kind of crazy long command which is impossible
-      // Throw because the developper shouldn't do this.
-      throw std::runtime_error("VN: Serial buffer overflow.");
-      break;
-    case SensorError::ERR_INVALID_CHECKSUM:  ///< Invalid checksum.
-      ROS_WARN("VN: Invalid checksum on packet %s",
-               std::to_string(index).c_str());
-      break;
-    case SensorError::ERR_INVALID_COMMAND:  ///< Invalid command.
-      ROS_WARN("VN: Invalid command on packet %s",
-               std::to_string(index).c_str());
-      break;
-    case SensorError::ERR_NOT_ENOUGH_PARAMETERS:  ///< Not enough parameters.
-      ROS_WARN("VN: Not enough parameters.");
-      break;
-    case SensorError::ERR_TOO_MANY_PARAMETERS:  ///< Too many parameters.
-      ROS_WARN("VN: Too many parameters.");
-      break;
-    case SensorError::ERR_INVALID_PARAMETER:  ///< Invalid parameter.
-      ROS_WARN("VN: Invalid parameter.");
-      break;
-    case SensorError::ERR_INVALID_REGISTER:  ///< Invalid register.
-      ROS_WARN("VN: Invalid register.");
-      break;
-    case SensorError::ERR_UNAUTHORIZED_ACCESS:  ///< Unauthorized access.
-      ROS_WARN("VN: Unauthorized access to a register.");
-      break;
-    case SensorError::ERR_WATCHDOG_RESET:  ///< Watchdog reset
-      ROS_WARN(
-          "VN: Watchdog reset has occured. VN should have restarted within 50 "
-          "ms.");
-      break;
-    case SensorError::ERR_OUTPUT_BUFFER_OVERFLOW:  ///< Output buffer overflow.
-      ROS_WARN("VN: Output buffer overflow.");
-      break;
-    case SensorError::ERR_INSUFFICIENT_BAUD_RATE:  ///< Insufficient baud rate.
-      ROS_WARN(
-          "VN: Insufficient baud rate for requested async data output and "
-          "rate.");
-      break;
-    case SensorError::ERR_ERROR_BUFFER_OVERFLOW:  ///< Error buffer overflow.
-      ROS_WARN("VN: System error buffer overflow.");
-      break;
-    default:
-      throw std::runtime_error("VN: Unknown error code " + std::to_string(se));
-      break;
+  case SensorError::ERR_HARD_FAULT:
+    ROS_ERROR("VN: Hard fault. Processor will force restart.");
+    break;
+  case SensorError::ERR_SERIAL_BUFFER_OVERFLOW: ///< Serial buffer overflow.
+    // We tried sending some kind of crazy long command which is impossible
+    // Throw because the developper shouldn't do this.
+    throw std::runtime_error("VN: Serial buffer overflow.");
+    break;
+  case SensorError::ERR_INVALID_CHECKSUM: ///< Invalid checksum.
+    ROS_WARN("VN: Invalid checksum on packet %s",
+             std::to_string(index).c_str());
+    break;
+  case SensorError::ERR_INVALID_COMMAND: ///< Invalid command.
+    ROS_WARN("VN: Invalid command on packet %s", std::to_string(index).c_str());
+    break;
+  case SensorError::ERR_NOT_ENOUGH_PARAMETERS: ///< Not enough parameters.
+    ROS_WARN("VN: Not enough parameters.");
+    break;
+  case SensorError::ERR_TOO_MANY_PARAMETERS: ///< Too many parameters.
+    ROS_WARN("VN: Too many parameters.");
+    break;
+  case SensorError::ERR_INVALID_PARAMETER: ///< Invalid parameter.
+    ROS_WARN("VN: Invalid parameter.");
+    break;
+  case SensorError::ERR_INVALID_REGISTER: ///< Invalid register.
+    ROS_WARN("VN: Invalid register.");
+    break;
+  case SensorError::ERR_UNAUTHORIZED_ACCESS: ///< Unauthorized access.
+    ROS_WARN("VN: Unauthorized access to a register.");
+    break;
+  case SensorError::ERR_WATCHDOG_RESET: ///< Watchdog reset
+    ROS_WARN(
+        "VN: Watchdog reset has occured. VN should have restarted within 50 "
+        "ms.");
+    break;
+  case SensorError::ERR_OUTPUT_BUFFER_OVERFLOW: ///< Output buffer overflow.
+    ROS_WARN("VN: Output buffer overflow.");
+    break;
+  case SensorError::ERR_INSUFFICIENT_BAUD_RATE: ///< Insufficient baud rate.
+    ROS_WARN("VN: Insufficient baud rate for requested async data output and "
+             "rate.");
+    break;
+  case SensorError::ERR_ERROR_BUFFER_OVERFLOW: ///< Error buffer overflow.
+    ROS_WARN("VN: System error buffer overflow.");
+    break;
+  default:
+    throw std::runtime_error("VN: Unknown error code " + std::to_string(se));
+    break;
   }
 }
 
-}  // end namespace
+} // end namespace
