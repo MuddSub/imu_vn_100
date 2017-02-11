@@ -1,7 +1,5 @@
 /*
- * Copyright [2016]
- * Authors: [Ke Sun]
- *          Andre Phu-Van Nguyen <andre-phu-van.nguyen@polymtl.ca>
+ * Copyright [2015] [Ke Sun]
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +17,6 @@
 #ifndef IMU_VN_100_ROS_H_
 #define IMU_VN_100_ROS_H_
 
-#include <mutex>
-
 #include <ros/ros.h>
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <diagnostic_updater/publisher.h>
@@ -29,8 +25,7 @@
 #include <sensor_msgs/FluidPressure.h>
 #include <sensor_msgs/Temperature.h>
 
-#include "vn/sensors/sensors.h"
-#include "vn/protocol/uart/types.h"
+#include <vn100.h>
 
 namespace imu_vn_100 {
 
@@ -80,7 +75,7 @@ class ImuVn100 {
 
   void Stream(bool async = true);
 
-  void PublishData(vn::protocol::uart::Packet& p);
+  void PublishData(const VnDeviceCompositeData& data);
 
   void RequestOnce();
 
@@ -93,7 +88,6 @@ class ImuVn100 {
   void Configure();
 
   struct SyncInfo {
-    std::mutex info_mutex;
     unsigned count = 0;
     ros::Time time;
 
@@ -107,20 +101,16 @@ class ImuVn100 {
     bool SyncEnabled() const;
   };
 
-  const SyncInfo* sync_info() const { return sync_info_; }
-  void lock_sync_info() { sync_info_->info_mutex.lock(); }
-  void unlock_sync_info() { sync_info_->info_mutex.unlock(); }
+  const SyncInfo sync_info() const { return sync_info_; }
 
-  bool IsBinaryOutput() { return binary_output_; }
  private:
   ros::NodeHandle pnh_;
-  vn::sensors::VnSensor imu_;
+  Vn100 imu_;
 
   // Settings
   std::string port_;
   int baudrate_ = 921600;
   int imu_rate_ = kDefaultImuRate;
-  vn::protocol::uart::AsyncMode vn_serial_output_ = vn::protocol::uart::ASYNCMODE_PORT1;
   double imu_rate_double_ = kDefaultImuRate;
   std::string frame_id_;
 
@@ -129,15 +119,10 @@ class ImuVn100 {
   bool enable_temp_ = true;
   bool binary_output_ = true;
 
-  SyncInfo* sync_info_;
+  SyncInfo sync_info_;
 
   du::Updater updater_;
   DiagnosedPublisher pd_imu_, pd_mag_, pd_pres_, pd_temp_;
-
-  // State variables
-  uint64_t vn100_prev_timestamp_ = 0;   // Time since startup in nanoseconds
-  ros::Time ros_prev_timestamp_;    // Timestamp of last published message
-  bool first_publish_ = false;
 
   void FixImuRate();
   void LoadParameters();
@@ -145,8 +130,8 @@ class ImuVn100 {
 };
 
 // Just don't like type that is ALL CAP
-//using VnErrorCode = VN_ERROR_CODE;
-//void VnEnsure(const VnErrorCode& error_code);
+using VnErrorCode = VN_ERROR_CODE;
+void VnEnsure(const VnErrorCode& error_code);
 
 }  // namespace imu_vn_100
 
