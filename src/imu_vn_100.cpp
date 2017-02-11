@@ -19,21 +19,21 @@
 namespace imu_vn_100 {
 
 // LESS HACK IS STILL HACK
-ImuVn100* imu_vn_100_ptr;
+ImuVn100 *imu_vn_100_ptr;
 
 using sensor_msgs::Imu;
 using sensor_msgs::MagneticField;
 using sensor_msgs::FluidPressure;
 using sensor_msgs::Temperature;
 
-void RosVector3FromVnVector3(geometry_msgs::Vector3& ros_vec3,
-                             const VnVector3& vn_vec3);
-void RosQuaternionFromVnQuaternion(geometry_msgs::Quaternion& ros_quat,
-                                   const VnQuaternion& vn_quat);
-void FillImuMessage(sensor_msgs::Imu& imu_msg,
-                    const VnDeviceCompositeData& data, bool binary_output);
+void RosVector3FromVnVector3(geometry_msgs::Vector3 &ros_vec3,
+                             const VnVector3 &vn_vec3);
+void RosQuaternionFromVnQuaternion(geometry_msgs::Quaternion &ros_quat,
+                                   const VnQuaternion &vn_quat);
+void FillImuMessage(sensor_msgs::Imu &imu_msg,
+                    const VnDeviceCompositeData &data, bool binary_output);
 
-void AsyncListener(void* sender, VnDeviceCompositeData* data) {
+void AsyncListener(void *sender, VnDeviceCompositeData *data) {
   imu_vn_100_ptr->PublishData(*data);
 }
 
@@ -42,8 +42,9 @@ constexpr int ImuVn100::kDefaultImuRate;
 constexpr int ImuVn100::kDefaultSyncOutRate;
 
 void ImuVn100::SyncInfo::Update(const unsigned sync_count,
-                                const ros::Time& sync_time) {
-  if (rate <= 0) return;
+                                const ros::Time &sync_time) {
+  if (rate <= 0)
+    return;
 
   if (count != sync_count) {
     count = sync_count;
@@ -75,10 +76,8 @@ void ImuVn100::SyncInfo::FixSyncRate() {
   ROS_INFO("Sync out rate: %d", rate);
 }
 
-ImuVn100::ImuVn100(const ros::NodeHandle& pnh)
-    : pnh_(pnh),
-      port_(std::string("/dev/ttyUSB0")),
-      baudrate_(921600),
+ImuVn100::ImuVn100(const ros::NodeHandle &pnh)
+    : pnh_(pnh), port_(std::string("/dev/ttyUSB0")), baudrate_(921600),
       frame_id_(std::string("imu")) {
   Initialize();
   imu_vn_100_ptr = this;
@@ -122,6 +121,8 @@ void ImuVn100::LoadParameters() {
 void ImuVn100::CreateDiagnosedPublishers() {
   imu_rate_double_ = imu_rate_;
   pd_imu_.Create<Imu>(pnh_, "imu", updater_, imu_rate_double_);
+  pd_twist_.Create<geometry_msgs::TwistStamped>(pnh_, "twist", updater_,
+                                                imu_rate_double_);
   if (enable_mag_) {
     pd_mag_.Create<MagneticField>(pnh_, "magnetic_field", updater_,
                                   imu_rate_double_);
@@ -255,13 +256,19 @@ void ImuVn100::Disconnect() {
   vn100_disconnect(&imu_);
 }
 
-void ImuVn100::PublishData(const VnDeviceCompositeData& data) {
+void ImuVn100::PublishData(const VnDeviceCompositeData &data) {
   sensor_msgs::Imu imu_msg;
+  geometry_msgs::TwistStamped twist_msg;
   imu_msg.header.stamp = ros::Time::now();
   imu_msg.header.frame_id = frame_id_;
 
+  twist_msg.header = imu_msg.header;
+  RosVector3FromVnVector3(twist_msg.twist.angular, data.angularRate);
+  RosVector3FromVnVector3(twist_msg.twist.linear, data.acceleration);
+
   FillImuMessage(imu_msg, data, binary_output_);
   pd_imu_.Publish(imu_msg);
+  pd_twist_.Publish(twist_msg);
 
   if (enable_mag_) {
     sensor_msgs::MagneticField mag_msg;
@@ -289,83 +296,79 @@ void ImuVn100::PublishData(const VnDeviceCompositeData& data) {
   updater_.update();
 }
 
-void VnEnsure(const VnErrorCode& error_code) {
-  if (error_code == VNERR_NO_ERROR) return;
+void VnEnsure(const VnErrorCode &error_code) {
+  if (error_code == VNERR_NO_ERROR)
+    return;
 
   switch (error_code) {
-    case VNERR_UNKNOWN_ERROR:
-      throw std::runtime_error("VN: Unknown error");
-    case VNERR_NOT_IMPLEMENTED:
-      throw std::runtime_error("VN: Not implemented");
-    case VNERR_TIMEOUT:
-      ROS_WARN("Opertation time out");
-      break;
-    case VNERR_SENSOR_INVALID_PARAMETER:
-      ROS_WARN("VN: Sensor invalid paramter");
-      break;
-    case VNERR_INVALID_VALUE:
-      ROS_WARN("VN: Invalid value");
-      break;
-    case VNERR_FILE_NOT_FOUND:
-      ROS_WARN("VN: File not found");
-      break;
-    case VNERR_NOT_CONNECTED:
-      throw std::runtime_error("VN: not connected");
-    case VNERR_PERMISSION_DENIED:
-      throw std::runtime_error("VN: Permission denied");
-    default:
-      ROS_WARN("Unhandled error type");
+  case VNERR_UNKNOWN_ERROR:
+    throw std::runtime_error("VN: Unknown error");
+  case VNERR_NOT_IMPLEMENTED:
+    throw std::runtime_error("VN: Not implemented");
+  case VNERR_TIMEOUT:
+    ROS_WARN("Opertation time out");
+    break;
+  case VNERR_SENSOR_INVALID_PARAMETER:
+    ROS_WARN("VN: Sensor invalid paramter");
+    break;
+  case VNERR_INVALID_VALUE:
+    ROS_WARN("VN: Invalid value");
+    break;
+  case VNERR_FILE_NOT_FOUND:
+    ROS_WARN("VN: File not found");
+    break;
+  case VNERR_NOT_CONNECTED:
+    throw std::runtime_error("VN: not connected");
+  case VNERR_PERMISSION_DENIED:
+    throw std::runtime_error("VN: Permission denied");
+  default:
+    ROS_WARN("Unhandled error type");
   }
 }
 
-void RosVector3FromVnVector3(geometry_msgs::Vector3& ros_vec3,
-                             const VnVector3& vn_vec3) {
+void RosVector3FromVnVector3(geometry_msgs::Vector3 &ros_vec3,
+                             const VnVector3 &vn_vec3) {
   ros_vec3.x = vn_vec3.c0;
   ros_vec3.y = vn_vec3.c1;
   ros_vec3.z = vn_vec3.c2;
 }
 
-void RosVector3FromVnYpr(geometry_msgs::Vector3& ros_vec3,
-                             const VnYpr& vn_ypr) {
+void RosVector3FromVnYpr(geometry_msgs::Vector3 &ros_vec3,
+                         const VnYpr &vn_ypr) {
   ros_vec3.x = vn_ypr.yaw;
   ros_vec3.y = vn_ypr.pitch;
   ros_vec3.z = vn_ypr.roll;
 }
 
-void RosQuaternionFromVnQuaternion(geometry_msgs::Quaternion& ros_quat,
-                                   const VnQuaternion& vn_quat) {
+void RosQuaternionFromVnQuaternion(geometry_msgs::Quaternion &ros_quat,
+                                   const VnQuaternion &vn_quat) {
   ros_quat.x = vn_quat.x;
   ros_quat.y = vn_quat.y;
   ros_quat.z = vn_quat.z;
   ros_quat.w = vn_quat.w;
 }
 
-void RosQuaternionFromVnYpr(geometry_msgs::Quaternion& ros_quat,
-                                   const VnYpr& vn_ypr) {
+void RosQuaternionFromVnYpr(geometry_msgs::Quaternion &ros_quat,
+                            const VnYpr &vn_ypr) {
   ros_quat.x = vn_ypr.roll;
   ros_quat.y = vn_ypr.pitch;
   ros_quat.z = vn_ypr.yaw;
 }
 
-
-void FillImuMessage(sensor_msgs::Imu& imu_msg,
-                    const VnDeviceCompositeData& data, bool binary_output) {
+void FillImuMessage(sensor_msgs::Imu &imu_msg,
+                    const VnDeviceCompositeData &data, bool binary_output) {
   if (binary_output) {
     RosQuaternionFromVnYpr(imu_msg.orientation, data.ypr);
     // NOTE: The IMU angular velocity and linear acceleration outputs are
     // swapped. And also why are they different?
-    RosVector3FromVnVector3(imu_msg.angular_velocity,
-                            data.angularRate);
-    RosVector3FromVnVector3(imu_msg.linear_acceleration,
-                            data.acceleration);
+    RosVector3FromVnVector3(imu_msg.angular_velocity, data.angularRate);
+    RosVector3FromVnVector3(imu_msg.linear_acceleration, data.acceleration);
   } else {
     RosQuaternionFromVnQuaternion(imu_msg.orientation, data.quaternion);
 
-
     RosVector3FromVnVector3(imu_msg.angular_velocity, data.angularRate);
     RosVector3FromVnVector3(imu_msg.linear_acceleration, data.acceleration);
-
   }
 }
 
-}  //  namespace imu_vn_100
+} //  namespace imu_vn_100
