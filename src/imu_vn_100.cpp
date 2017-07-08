@@ -216,9 +216,9 @@ void ImuVn100::Stream(bool async) {
       // Set the binary output data type and data rate
       VnEnsure(vn100_setBinaryOutput1Configuration(
           &imu_, BINARY_ASYNC_MODE_SERIAL_1, kBaseImuRate / imu_rate_,
-          BG1_YPR | BG1_ANGULAR_RATE | BG1_ACCEL,
+          BG1_ANGULAR_RATE,
           // BG1_IMU,
-          BG3_NONE, BG5_NONE, true));
+          BG3_NONE, BG5_YPR | BG5_ACCEL_NED, true));
     } else {
       // Set the ASCII output data type and data rate
       // ROS_INFO("Configure the output data type and frequency (id: 6 & 7)");
@@ -362,7 +362,8 @@ void FillImuMessage(sensor_msgs::Imu &imu_msg,
     // NOTE: The IMU angular velocity and linear acceleration outputs are
     // swapped. And also why are they different?
     RosVector3FromVnVector3(imu_msg.angular_velocity, data.angularRate);
-    RosVector3FromVnVector3(imu_msg.linear_acceleration, data.acceleration);
+    // RosVector3FromVnVector3(imu_msg.linear_acceleration,
+    // data.linearAccelBody);
   } else {
     RosQuaternionFromVnQuaternion(imu_msg.orientation, data.quaternion);
 
