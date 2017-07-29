@@ -37,6 +37,10 @@ void AsyncListener(void *sender, VnDeviceCompositeData *data) {
   imu_vn_100_ptr->PublishData(*data);
 }
 
+void VnErrorHandler(void *sender, VN_ERROR_CODE error_code) {
+  imu_vn_100_ptr->ErrorHandler(error_code);
+}
+
 constexpr int ImuVn100::kBaseImuRate;
 constexpr int ImuVn100::kDefaultImuRate;
 constexpr int ImuVn100::kDefaultSyncOutRate;
@@ -79,6 +83,7 @@ void ImuVn100::SyncInfo::FixSyncRate() {
 ImuVn100::ImuVn100(const ros::NodeHandle &pnh)
     : pnh_(pnh), port_(std::string("/dev/ttyUSB0")), baudrate_(921600),
       frame_id_(std::string("imu")) {
+
   Initialize();
   imu_vn_100_ptr = this;
 }
@@ -108,6 +113,9 @@ void ImuVn100::LoadParameters() {
   pnh_.param("enable_mag", enable_mag_, true);
   pnh_.param("enable_pres", enable_pres_, true);
   pnh_.param("enable_temp", enable_temp_, true);
+  pnh_.param("enable_frame_rotation", enable_frame_rotation_, false);
+
+  pnh_.param("frame_rotation_matrix", frame_rotation_);
 
   pnh_.param("sync_rate", sync_info_.rate, kDefaultSyncOutRate);
   pnh_.param("sync_pulse_width_us", sync_info_.pulse_width_us, 1000);
@@ -123,6 +131,9 @@ void ImuVn100::CreateDiagnosedPublishers() {
   pd_imu_.Create<Imu>(pnh_, "imu", updater_, imu_rate_double_);
   pd_twist_.Create<geometry_msgs::TwistStamped>(pnh_, "twist", updater_,
                                                 imu_rate_double_);
+
+  srv_tare_ = pnh_.advertiseService("tare", &ImuVn100::TareOrientation, this);
+
   if (enable_mag_) {
     pd_mag_.Create<MagneticField>(pnh_, "magnetic_field", updater_,
                                   imu_rate_double_);
@@ -140,32 +151,72 @@ void ImuVn100::CreateDiagnosedPublishers() {
 void ImuVn100::Initialize() {
   LoadParameters();
 
+  for (auto i : frame_rotation_) {
+    ROS_INFO("%f", i);
+  }
+
+  ROS_INFO("%d", frame_rotation_.size());
+  ROS_INFO("%d", enable_frame_rotation_);
+
   ROS_DEBUG("Connecting to device");
-  VnEnsure(vn100_connect(&imu_, port_.c_str(), 115200));
+  // Only function where error handler is needed because you can't registerer
+  // the error handler until the device has been connected
+  ErrorHandler(vn100_connect(&imu_, port_.c_str(), 115200));
   ros::Duration(0.5).sleep();
   ROS_INFO("Connected to device at %s", port_.c_str());
 
+  VnErrorCode error_code =
+      vn100_registerErrorCodeReceivedListener(&imu_, &VnErrorHandler);
+  if (error_code != VNERR_NO_ERROR) {
+    throw std::runtime_error("Error attempting to register error handler");
+  }
+  ROS_INFO("Error handler successfully registered");
+
   unsigned int old_baudrate;
-  VnEnsure(vn100_getSerialBaudRate(&imu_, &old_baudrate));
+  vn100_getSerialBaudRate(&imu_, &old_baudrate);
   ROS_INFO("Default serial baudrate: %u", old_baudrate);
 
   ROS_INFO("Set serial baudrate to %d", baudrate_);
-  VnEnsure(vn100_setSerialBaudRate(&imu_, baudrate_, true));
+  vn100_setSerialBaudRate(&imu_, baudrate_, true);
 
   ROS_DEBUG("Disconnecting the device");
   vn100_disconnect(&imu_);
   ros::Duration(0.5).sleep();
 
   ROS_DEBUG("Reconnecting to device");
-  VnEnsure(vn100_connect(&imu_, port_.c_str(), baudrate_));
+  vn100_connect(&imu_, port_.c_str(), baudrate_);
   ros::Duration(0.5).sleep();
   ROS_INFO("Connected to device at %s", port_.c_str());
 
-  VnEnsure(vn100_getSerialBaudRate(&imu_, &old_baudrate));
+  vn100_getSerialBaudRate(&imu_, &old_baudrate);
   ROS_INFO("New serial baudrate: %u", old_baudrate);
 
   // Idle the device for intialization
-  VnEnsure(vn100_pauseAsyncOutputs(&imu_, true));
+  vn100_pauseAsyncOutputs(&imu_, true);
+
+  // Pitch counterclockwise rotation of 90 degrees
+  // 0 0 1
+  // 0 1 0
+  //-1 0 1
+
+  // Set a new reference frame and reset the imu
+  //VnMatrix3x3 refFrame;
+
+  //refFrame.c00 = 1, refFrame.c01 = 0, refFrame.c02 = 0;
+  //refFrame.c10 = 0, refFrame.c11 = -1, refFrame.c12 = 0;
+  //refFrame.c20 = 0, refFrame.c21 = 0, refFrame.c22 = -1;
+
+  //refFrame.c00 = 1, refFrame.c01 = 0, refFrame.c02 = 0;
+  //refFrame.c10 = 0, refFrame.c11 = 1, refFrame.c12 = 0;
+  //refFrame.c20 = 0, refFrame.c21 = 0, refFrame.c22 = 1;
+
+  //vn100_setReferenceFrameRotation(&imu_, refFrame, true);
+
+  //vn100_writeSettings(&imu_, true);
+
+  //vn100_reset(&imu_);
+
+  //ros::Duration(1).sleep();
 
   ROS_INFO("Fetching device info.");
   char model_number_buffer[30] = {0};
@@ -173,28 +224,28 @@ void ImuVn100::Initialize() {
   char serial_number_buffer[30] = {0};
   char firmware_version_buffer[30] = {0};
 
-  VnEnsure(vn100_getModelNumber(&imu_, model_number_buffer, 30));
+  vn100_getModelNumber(&imu_, model_number_buffer, 30);
   ROS_INFO("Model number: %s", model_number_buffer);
-  VnEnsure(vn100_getHardwareRevision(&imu_, &hardware_revision));
+  vn100_getHardwareRevision(&imu_, &hardware_revision);
   ROS_INFO("Hardware revision: %d", hardware_revision);
-  VnEnsure(vn100_getSerialNumber(&imu_, serial_number_buffer, 30));
+  vn100_getSerialNumber(&imu_, serial_number_buffer, 30);
   ROS_INFO("Serial number: %s", serial_number_buffer);
-  VnEnsure(vn100_getFirmwareVersion(&imu_, firmware_version_buffer, 30));
+  vn100_getFirmwareVersion(&imu_, firmware_version_buffer, 30);
   ROS_INFO("Firmware version: %s", firmware_version_buffer);
 
   if (sync_info_.SyncEnabled()) {
     ROS_INFO("Set Synchronization Control Register (id:32).");
-    VnEnsure(vn100_setSynchronizationControl(
+    vn100_setSynchronizationControl(
         &imu_, SYNCINMODE_COUNT, SYNCINEDGE_RISING, 0, SYNCOUTMODE_IMU_START,
         SYNCOUTPOLARITY_POSITIVE, sync_info_.skip_count,
-        sync_info_.pulse_width_us * 1000, true));
+        sync_info_.pulse_width_us * 1000, true);
 
     if (!binary_output_) {
       ROS_INFO("Set Communication Protocal Control Register (id:30).");
-      VnEnsure(vn100_setCommunicationProtocolControl(
+      vn100_setCommunicationProtocolControl(
           &imu_, SERIALCOUNT_SYNCOUT_COUNT, SERIALSTATUS_OFF, SPICOUNT_NONE,
           SPISTATUS_OFF, SERIALCHECKSUM_8BIT, SPICHECKSUM_8BIT, ERRORMODE_SEND,
-          true));
+          true);
     }
   }
 
@@ -207,52 +258,81 @@ void ImuVn100::Initialize() {
 
 void ImuVn100::Stream(bool async) {
   // Pause the device first
-  VnEnsure(vn100_pauseAsyncOutputs(&imu_, true));
+  vn100_pauseAsyncOutputs(&imu_, true);
+
+  VnMatrix3x3 m;
+  vn100_getReferenceFrameRotation(&imu_, &m);
+  ROS_INFO("%.2f  | %.2f  | %.2f", m.c00, m.c01, m.c02);
+  ROS_INFO("%.2f  | %.2f  | %.2f", m.c10, m.c11, m.c12);
+  ROS_INFO("%.2f  | %.2f  | %.2f", m.c20, m.c21, m.c22);
+
+  // Pitch counterclockwise rotation of 90 degrees
+  // 0 0 1
+  // 0 1 0
+  //-1 0 1
 
   if (async) {
-    VnEnsure(vn100_setAsynchronousDataOutputType(&imu_, VNASYNC_OFF, true));
+    vn100_setAsynchronousDataOutputType(&imu_, VNASYNC_OFF, true);
 
     if (binary_output_) {
       // Set the binary output data type and data rate
-      VnEnsure(vn100_setBinaryOutput1Configuration(
+      vn100_setBinaryOutput1Configuration(
           &imu_, BINARY_ASYNC_MODE_SERIAL_1, kBaseImuRate / imu_rate_,
-          BG1_ANGULAR_RATE,
+          BG1_ANGULAR_RATE | BG1_YPR,
           // BG1_IMU,
-          BG3_NONE, BG5_YPR | BG5_ACCEL_NED, true));
+          BG3_TEMP | BG3_PRES, BG5_ACCEL_NED, true);
     } else {
       // Set the ASCII output data type and data rate
       // ROS_INFO("Configure the output data type and frequency (id: 6 & 7)");
-      VnEnsure(vn100_setAsynchronousDataOutputType(&imu_, VNASYNC_VNIMU, true));
+      vn100_setAsynchronousDataOutputType(&imu_, VNASYNC_VNIMU, true);
     }
 
     // Add a callback function for new data event
-    VnEnsure(vn100_registerAsyncDataReceivedListener(&imu_, &AsyncListener));
+    vn100_registerAsyncDataReceivedListener(&imu_, &AsyncListener);
 
     ROS_INFO("Setting IMU rate to %d", imu_rate_);
-    VnEnsure(vn100_setAsynchronousDataOutputFrequency(&imu_, imu_rate_, true));
+    vn100_setAsynchronousDataOutputFrequency(&imu_, imu_rate_, true);
   } else {
     // Mute the stream
     ROS_DEBUG("Mute the device");
-    VnEnsure(vn100_setAsynchronousDataOutputType(&imu_, VNASYNC_OFF, true));
+    vn100_setAsynchronousDataOutputType(&imu_, VNASYNC_OFF, true);
     // Remove the callback function for new data event
-    VnEnsure(vn100_unregisterAsyncDataReceivedListener(&imu_, &AsyncListener));
+    vn100_unregisterAsyncDataReceivedListener(&imu_, &AsyncListener);
   }
 
   // Resume the device
-  VnEnsure(vn100_resumeAsyncOutputs(&imu_, true));
+  vn100_resumeAsyncOutputs(&imu_, true);
 }
 
-void ImuVn100::Resume(bool need_reply) {
-  vn100_resumeAsyncOutputs(&imu_, need_reply);
+VN_ERROR_CODE ImuVn100::Resume(bool need_reply) {
+  return vn100_resumeAsyncOutputs(&imu_, need_reply);
 }
 
-void ImuVn100::Idle(bool need_reply) {
-  vn100_pauseAsyncOutputs(&imu_, need_reply);
+VN_ERROR_CODE ImuVn100::Idle(bool need_reply) {
+  return vn100_pauseAsyncOutputs(&imu_, need_reply);
 }
+
+VN_ERROR_CODE ImuVn100::ZeroOrientation(bool need_reply) {
+  VnErrorCode error_code;
+
+  // Idle the Imu, wait for a reply
+  if ((error_code = Idle(need_reply)) != VNERR_NO_ERROR)
+    return error_code;
+
+  if ((error_code = vn100_tare(&imu_, need_reply)) != VNERR_NO_ERROR)
+    return error_code;
+
+  if ((error_code = Resume(need_reply)) != VNERR_NO_ERROR)
+    return error_code;
+
+  return VNERR_NO_ERROR;
+}
+
+void ImuVn100::Reset() { vn100_reset(&imu_); }
 
 void ImuVn100::Disconnect() {
   // TODO: why reset the device?
-  vn100_reset(&imu_);
+  Reset();
   vn100_disconnect(&imu_);
 }
 
@@ -296,6 +376,21 @@ void ImuVn100::PublishData(const VnDeviceCompositeData &data) {
   updater_.update();
 }
 
+void ImuVn100::ErrorHandler(const VnErrorCode &error_code) {
+  VnEnsure(error_code);
+}
+
+bool ImuVn100::TareOrientation(imu_vn_100::Tare::Request &req,
+                               imu_vn_100::Tare::Response &res) {
+  if (ZeroOrientation(true) == VNERR_NO_ERROR) {
+    res.status = 0;
+    return true;
+  } else {
+    res.status = -1;
+    return false;
+  }
+}
+
 void VnEnsure(const VnErrorCode &error_code) {
   if (error_code == VNERR_NO_ERROR)
     return;
@@ -315,7 +410,7 @@ void VnEnsure(const VnErrorCode &error_code) {
     ROS_WARN("VN: Invalid value");
     break;
   case VNERR_FILE_NOT_FOUND:
-    ROS_WARN("VN: File not found");
+    throw std::runtime_error("VN: File not found");
     break;
   case VNERR_NOT_CONNECTED:
     throw std::runtime_error("VN: not connected");

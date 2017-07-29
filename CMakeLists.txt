@@ -7,8 +7,20 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   diagnostic_updater
+  message_generation
 )
 find_package(Boost REQUIRED)
+
+add_service_files(
+  FILES
+  Tare.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+
 
 catkin_package(
   INCLUDE_DIRS include vncpplib/include
@@ -22,6 +34,9 @@ include_directories(
   vncpplib/include
   ${catkin_INCLUDE_DIRS}
 )
+
+
+
 
 
 add_library(imu_vn_100

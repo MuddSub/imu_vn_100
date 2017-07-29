@@ -17,15 +17,17 @@
 #ifndef IMU_VN_100_ROS_H_
 #define IMU_VN_100_ROS_H_
 
-#include <ros/ros.h>
 #include <diagnostic_updater/diagnostic_updater.h>
 #include <diagnostic_updater/publisher.h>
+#include <ros/ros.h>
+#include <sensor_msgs/FluidPressure.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/MagneticField.h>
-#include <sensor_msgs/FluidPressure.h>
 #include <sensor_msgs/Temperature.h>
 
 #include <geometry_msgs/TwistStamped.h>
+
+#include <imu_vn_100/Tare.h>
 
 #include <vn100.h>
 
@@ -42,8 +44,8 @@ struct DiagnosedPublisher {
   TopicDiagnosticPtr diag;
 
   template <typename MessageT>
-  void Create(ros::NodeHandle& pnh, const std::string& topic,
-              du::Updater& updater, double& rate) {
+  void Create(ros::NodeHandle &pnh, const std::string &topic,
+              du::Updater &updater, double &rate) {
     pub = pnh.advertise<MessageT>(topic, 1);
     du::FrequencyStatusParam freq_param(&rate, &rate, 0.01, 10);
     du::TimeStampStatusParam time_param(0, 0.5 / rate);
@@ -51,8 +53,7 @@ struct DiagnosedPublisher {
                                                    time_param);
   }
 
-  template <typename MessageT>
-  void Publish(const MessageT& message) {
+  template <typename MessageT> void Publish(const MessageT &message) {
     diag->tick(message.header.stamp);
     pub.publish(message);
   }
@@ -63,31 +64,40 @@ struct DiagnosedPublisher {
  * @author Ke Sun
  */
 class ImuVn100 {
- public:
+public:
   static constexpr int kBaseImuRate = 800;
   static constexpr int kDefaultImuRate = 100;
   static constexpr int kDefaultSyncOutRate = 20;
 
-  explicit ImuVn100(const ros::NodeHandle& pnh);
-  ImuVn100(const ImuVn100&) = delete;
-  ImuVn100& operator=(const ImuVn100&) = delete;
+  explicit ImuVn100(const ros::NodeHandle &pnh);
+  ImuVn100(const ImuVn100 &) = delete;
+  ImuVn100 &operator=(const ImuVn100 &) = delete;
   ~ImuVn100();
 
   void Initialize();
 
   void Stream(bool async = true);
 
-  void PublishData(const VnDeviceCompositeData& data);
+  void PublishData(const VnDeviceCompositeData &data);
 
   void RequestOnce();
 
-  void Idle(bool need_reply = true);
+  VN_ERROR_CODE Idle(bool need_reply = true);
 
-  void Resume(bool need_reply = true);
+  VN_ERROR_CODE Resume(bool need_reply = true);
+
+  VN_ERROR_CODE ZeroOrientation(bool need_reply = true);
+
+  void Reset();
 
   void Disconnect();
 
   void Configure();
+
+  void ErrorHandler(const VN_ERROR_CODE &error_code);
+
+  bool TareOrientation(imu_vn_100::Tare::Request &req,
+                       imu_vn_100::Tare::Response &res);
 
   struct SyncInfo {
     unsigned count = 0;
@@ -98,14 +108,14 @@ class ImuVn100 {
     int pulse_width_us = 1000;
     int skip_count = 0;
 
-    void Update(const unsigned sync_count, const ros::Time& sync_time);
+    void Update(const unsigned sync_count, const ros::Time &sync_time);
     void FixSyncRate();
     bool SyncEnabled() const;
   };
 
   const SyncInfo sync_info() const { return sync_info_; }
 
- private:
+private:
   ros::NodeHandle pnh_;
   Vn100 imu_;
 
@@ -115,16 +125,19 @@ class ImuVn100 {
   int imu_rate_ = kDefaultImuRate;
   double imu_rate_double_ = kDefaultImuRate;
   std::string frame_id_;
+  std::vector<double> frame_rotation_;
 
   bool enable_mag_ = true;
   bool enable_pres_ = true;
   bool enable_temp_ = true;
+  bool enable_frame_rotation_ = false;
   bool binary_output_ = true;
 
   SyncInfo sync_info_;
 
   du::Updater updater_;
   DiagnosedPublisher pd_imu_, pd_twist_, pd_mag_, pd_pres_, pd_temp_;
+  ros::ServiceServer srv_tare_;
 
   void FixImuRate();
   void LoadParameters();
@@ -133,8 +146,8 @@ class ImuVn100 {
 
 // Just don't like type that is ALL CAP
 using VnErrorCode = VN_ERROR_CODE;
-void VnEnsure(const VnErrorCode& error_code);
+void VnEnsure(const VnErrorCode &error_code);
 
-}  // namespace imu_vn_100
+} // namespace imu_vn_100
 
-#endif  // IMU_VN_100_ROS_H_
+#endif // IMU_VN_100_ROS_H_
