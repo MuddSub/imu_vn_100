@@ -462,9 +462,10 @@ void RosQuaternionFromVnQuaternion(geometry_msgs::Quaternion &ros_quat,
 
 void RosQuaternionFromVnYpr(geometry_msgs::Quaternion &ros_quat,
                             const VnYpr &vn_ypr) {
-  ros_quat.x = vn_ypr.roll;
-  ros_quat.y = vn_ypr.pitch;
-  ros_quat.z = vn_ypr.yaw;
+  tf2::Quaternion rotation;
+  rotation.setRPY(vn_ypr.roll, vn_ypr.pitch, vn_ypr.yaw);
+  rotation.normalize();
+  ros_quat = tf2::toMsg(rotation);
 }
 
 void FillImuMessage(sensor_msgs::Imu &imu_msg,

@@ -26,6 +26,9 @@
 #include <sensor_msgs/Temperature.h>
 #include <std_msgs/Float64.h>
 
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
 #include <geometry_msgs/TwistStamped.h>
 
 #include <imu_vn_100/Tare.h>
