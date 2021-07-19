@@ -91,6 +91,7 @@ ImuVn100::ImuVn100(const ros::NodeHandle &pnh)
   yOrientationPub_ = pnh_.advertise<std_msgs::Float64>(yTopic, 1);
   zOrientationPub_ = pnh_.advertise<std_msgs::Float64>(zTopic, 1);
   zVelPub_ = pnh_.advertise<std_msgs::Float64>("zVel", 1);
+
   Initialize();
   imu_vn_100_ptr = this;
 }
@@ -462,8 +463,12 @@ void RosQuaternionFromVnQuaternion(geometry_msgs::Quaternion &ros_quat,
 
 void RosQuaternionFromVnYpr(geometry_msgs::Quaternion &ros_quat,
                             const VnYpr &vn_ypr) {
+  double roll_rads = vn_ypr.roll * M_PI / 180;
+  double pitch_rads = vn_ypr.pitch * M_PI / 180;
+  double yaw_rads = vn_ypr.yaw * M_PI / 180;
+
   tf2::Quaternion rotation;
-  rotation.setRPY(vn_ypr.roll, vn_ypr.pitch, vn_ypr.yaw);
+  rotation.setRPY(roll_rads, pitch_rads, yaw_rads);
   rotation.normalize();
   ros_quat = tf2::toMsg(rotation);
 }
